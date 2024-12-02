@@ -1,6 +1,8 @@
 import 'dart:typed_data';
 import 'dart:convert';
 
+import 'package:flaasm/binary/instruction.dart' as instructions;
+import 'package:flaasm/binary/instruction.dart';
 import 'package:flaasm/binary/types.dart';
 
 // Enum for SectionID
@@ -137,7 +139,6 @@ class SectionReader {
     return _offset >= _buf.lengthInBytes;
   }
 
-  // Placeholder for LEB128 decoding methods
   /// Decodes an unsigned LEB128 integer from [ByteData] starting at [offset].
   int decodeUleb128() {
     int result = 0;
@@ -258,7 +259,7 @@ class ImportSection extends Section {
 
   const ImportSection(this.imports);
 
-  Section decodeImportSection(SectionReader reader) {
+  static ImportSection decodeImportSection(SectionReader reader) {
     final List<Import> imports = [];
     final count = reader.readU32();
 
@@ -398,24 +399,24 @@ GlobalType decodeGlobalType(SectionReader reader) {
 
 ExprValue decodeExprValue(SectionReader reader) {
   final byte = reader.readByte();
-  final op = Opcode.fromU8(byte);
+  final op = instructions.OpcodeFrom.from(byte);
 
   ExprValue value;
   switch (op) {
-    case Opcode.I32Const:
+    case instructions.Opcode.I32Const:
       final i32Value =
           reader.readI32(); // Assuming you have a method for reading i32
       value = ExprValue.i32(i32Value); // Create a concrete value for I32
       break;
-    case Opcode.I64Const:
+    case instructions.Opcode.I64Const:
       final i64Value = reader.readI64(); // Replace with correct method for I64
       value = ExprValue.i64(i64Value); // Create a concrete value for I64
       break;
-    case Opcode.F32Const:
+    case instructions.Opcode.F32Const:
       final f32Value = reader.readF32(); // Replace with correct method for F32
       value = ExprValue.f32(f32Value); // Create a concrete value for F32
       break;
-    case Opcode.F64Const:
+    case instructions.Opcode.F64Const:
       final f64Value = reader.readF64(); // Replace with correct method for F64
       value = ExprValue.f64(f64Value); // Create a concrete value for F64
       break;
@@ -423,8 +424,8 @@ ExprValue decodeExprValue(SectionReader reader) {
       throw Exception('Invalid initialization expression opcode: $byte');
   }
 
-  final endByte = reader.byte();
-  if (endByte != Opcode.End) {
+  final endByte = reader.readByte();
+  if (endByte != instructions.Opcode.End) {
     throw Exception('Invalid initialization expression end opcode: $endByte');
   }
   return value;
@@ -432,27 +433,27 @@ ExprValue decodeExprValue(SectionReader reader) {
 
 Expr decodeExpr(SectionReader reader) {
   final byte = reader.readByte();
-  final op = Opcode.fromU8(byte);
+  final op = instructions.OpcodeFrom.from(byte);
 
   Expr value;
   switch (op) {
-    case Opcode.I32Const:
+    case instructions.Opcode.I32Const:
       final i32Value = reader.readI32();
       value = Expr.value(ExprValue.i32(i32Value));
       break;
-    case Opcode.I64Const:
+    case instructions.Opcode.I64Const:
       final i64Value = reader.readI64();
       value = Expr.value(ExprValue.i64(i64Value));
       break;
-    case Opcode.F32Const:
+    case instructions.Opcode.F32Const:
       final f32Value = reader.readF32();
       value = Expr.value(ExprValue.f32(f32Value));
       break;
-    case Opcode.F64Const:
+    case instructions.Opcode.F64Const:
       final f64Value = reader.readF64();
       value = Expr.value(ExprValue.f64(f64Value));
       break;
-    case Opcode.GlobalGet:
+    case instructions.Opcode.GlobalGet:
       final globalIndex = reader.readU32();
       value = Expr.globalIndex(globalIndex);
       break;
@@ -461,7 +462,7 @@ Expr decodeExpr(SectionReader reader) {
   }
 
   final endByte = reader.readByte();
-  if (endByte != Opcode.End) {
+  if (endByte != instructions.Opcode.End) {
     throw Exception('Invalid expression end opcode: $endByte');
   }
   return value;
@@ -474,7 +475,7 @@ Table decodeTable(SectionReader reader) {
   }
   final limits = decodeLimits(reader);
   final table = Table(
-    elemType: ElemType.fromU8(elemType), // Define conversion
+    elemType: ElemTypeFrom.from(elemType), // Define conversion
     limits: limits,
   );
   return table;
@@ -618,7 +619,7 @@ FunctionBody decodeFunctionBody(SectionReader reader) {
 BlockType decodeBlockType(SectionReader reader) {
   final byte = reader.readByte();
   if (byte == 0x40) {
-    return BlockType.empty();
+    return const BlockType.empty();
   } else {
     final valueType = ValueTypeFrom.from(byte); // Convert byte to ValueType
     return BlockType.value([valueType]);
@@ -630,27 +631,434 @@ Block decodeBlock(SectionReader reader) {
   return Block(blockType);
 }
 
-Future<Instruction> decodeInstruction(SectionReader reader) async {
-  final byte = reader.byte();
-  final opcode = decodeOpcode(byte);
+Future<instructions.Instruction> decodeInstruction(SectionReader reader) async {
+  final byte = reader.readByte();
+  final opcode = instructions.OpcodeFrom.from(byte);
 
   switch (opcode) {
-    case Opcode.Unreachable:
-      return Instruction(); // Assuming Instruction classes are instantiated like this
-    case Opcode.Block:
+    case instructions.Opcode.Unreachable:
+      return const instructions.Unreachable();
+    case instructions.Opcode.Nop:
+      return const instructions
+          .Nop(); // Assuming Instruction classes are instantiated like this
+    case instructions.Opcode.Block:
       final block = await decodeBlock(reader);
-      return Instruction(); // Adjust according to your Instruction type for `Block`
-    case Opcode.Br:
-      final index = reader.u32();
-      return Instruction(); // Adjust based on your actual Instruction class
-    case Opcode.Call:
-      final localIdx = reader.u32();
-      return Instruction(); // Adjust based on Call instruction
-    case Opcode.I32Const:
-      final value = reader.i32();
-      return Instruction(); // Adjust based on I32Const instruction
-    // Handle all other cases similarly
+      return instructions.BlockInstruction(block);
+    case instructions.Opcode.Loop:
+      final block = await decodeBlock(reader);
+      return instructions.LoopInstruction(block);
+    case instructions.Opcode.If:
+      final block = await decodeBlock(reader);
+      return instructions.IfInstruction(
+          block); // Adjust according to your Instruction type for `Block`
+    case instructions.Opcode.Else:
+      return const instructions.ElseInstruction();
+    case instructions.Opcode.End:
+      return const instructions.EndInstruction();
+    case instructions.Opcode.Br:
+      final index = reader.readU32();
+      return instructions.BrInstruction(index);
+    case instructions.Opcode.BrTable:
+      int count = reader.readU32();
+      List<int> indexes = List.filled(count, 0);
+      for (int i = 0; i < count; i++) {
+        int index = reader.readU32();
+        indexes[i] = index;
+      }
+      int defaultValue = reader.readU32();
+      return instructions.BrTableInstruction(indexes, defaultValue);
+    case instructions.Opcode.BrIf:
+      final index = reader.readU32();
+      return instructions.BrIfInstruction(
+          index); // Adjust based on your actual Instruction class
+    case instructions.Opcode.Call:
+      final localIdx = reader.readU32();
+      return instructions.CallInstruction(localIdx);
+    case instructions.Opcode.CallIndirect:
+      return instructions.CallIndirectInstruction(
+          reader.readU32(), reader.readU32());
+    case instructions.Opcode.Return:
+      return const instructions.ReturnInstruction();
+    case instructions.Opcode.LocalGet:
+      final localIdx = reader.readU32();
+      return instructions.LocalGetInstruction(localIdx);
+    case instructions.Opcode.LocalSet:
+      return instructions.LocalSetInstruction(reader.readU32());
+    case instructions.Opcode.LocalTee:
+      return instructions.LocalTeeInstruction(reader.readU32());
+    case instructions.Opcode.GlobalSet:
+      return instructions.GlobalSetInstruction(reader.readU32());
+    case instructions.Opcode.GlobalGet:
+      return instructions.GlobalGetInstruction(reader.readU32());
+    case instructions.Opcode.I32Sub:
+      return const instructions.I32SubInstruction();
+    case instructions.Opcode.I32Add:
+      return const instructions.I32AddInstruction();
+    case instructions.Opcode.I32Mul:
+      return const instructions.I32MulInstruction();
+    case instructions.Opcode.I32Clz:
+      return const instructions.I32ClzInstruction();
+    case instructions.Opcode.I32Ctz:
+      return const instructions.I32CtzInstruction();
+    case instructions.Opcode.I32DivU:
+      return const instructions.I32DivUInstruction();
+    case instructions.Opcode.I32DivS:
+      return const instructions.I32DivSInstruction();
+    case instructions.Opcode.I32Eq:
+      return const instructions.I32EqInstruction();
+    case instructions.Opcode.I32Eq:
+      return const instructions.I32EqInstruction();
+    case instructions.Opcode.I32Eqz:
+      return const instructions.I32EqzInstruction();
+    case instructions.Opcode.I32Ne:
+      return const instructions.I32NeInstruction();
+    case instructions.Opcode.I32LtS:
+      return const instructions.I32LtSInstruction();
+    case instructions.Opcode.I32LtU:
+      return const instructions.I32LtUInstruction();
+    case instructions.Opcode.I32GtS:
+      return const instructions.I32GtUInstruction();
+    case instructions.Opcode.I32LeS:
+      return const instructions.I32LeSInstruction();
+    case instructions.Opcode.I32LeU:
+      return const instructions.I32LeUInstruction();
+    case instructions.Opcode.I32GeS:
+      return const instructions.I32GeSInstruction();
+    case instructions.Opcode.I32GeU:
+      return const instructions.I32GeUInstruction();
+    case instructions.Opcode.I32Popcnt:
+      return const instructions.I32PopcntInstruction();
+    case instructions.Opcode.I32RemS:
+      return const instructions.I32RemSInstruction();
+    case instructions.Opcode.I32RemU:
+      return const instructions.I32RemUInstruction();
+    case instructions.Opcode.I32And:
+      return const instructions.I32AndInstruction();
+    case instructions.Opcode.I32Or:
+      return const instructions.I32OrInstruction();
+    case instructions.Opcode.I32Xor:
+      return const instructions.I32XorInstruction();
+    case instructions.Opcode.I32ShL:
+      return const instructions.I32ShLInstruction();
+    case instructions.Opcode.I32ShrS:
+      return const instructions.I32ShrSInstruction();
+    case instructions.Opcode.I32ShrU:
+      return const instructions.I32ShrUInstruction();
+    case instructions.Opcode.I32RtoL:
+      return const instructions.I32RotlInstruction();
+    case instructions.Opcode.I32RtoR:
+      return const instructions.I32RotrInstruction();
+    case instructions.Opcode.I32Extend8S:
+      return const instructions.I32Extend8SInstruction();
+    case instructions.Opcode.I32Extend16S:
+      return const instructions.I32Extend16SInstruction();
+    case instructions.Opcode.I32Const:
+      return instructions.I32ConstInstruction(reader.readI32());
+    case instructions.Opcode.I64Sub:
+      return const instructions.I64SubInstruction();
+    case instructions.Opcode.I64Add:
+      return const instructions.I64AddInstruction();
+    case instructions.Opcode.I64Mul:
+      return const instructions.I64MulInstruction();
+    case instructions.Opcode.I64Clz:
+      return const instructions.I64ClzInstruction();
+    case instructions.Opcode.I64Ctz:
+      return const instructions.I64CtzInstruction();
+    case instructions.Opcode.I64DivU:
+      return const instructions.I64DivUInstruction();
+    case instructions.Opcode.I64DivS:
+      return const instructions.I64DivSInstruction();
+    case instructions.Opcode.I64Eq:
+      return const instructions.I64EqInstruction();
+    case instructions.Opcode.I64Eq:
+      return const instructions.I64EqInstruction();
+    case instructions.Opcode.I64Eqz:
+      return const instructions.I64EqzInstruction();
+    case instructions.Opcode.I64Ne:
+      return const instructions.I64NeInstruction();
+    case instructions.Opcode.I64LtS:
+      return const instructions.I64LtSInstruction();
+    case instructions.Opcode.I64LtU:
+      return const instructions.I64LtUInstruction();
+    case instructions.Opcode.I64GtS:
+      return const instructions.I64GtUInstruction();
+    case instructions.Opcode.I64LeS:
+      return const instructions.I64LeSInstruction();
+    case instructions.Opcode.I64LeU:
+      return const instructions.I64LeUInstruction();
+    case instructions.Opcode.I64GeS:
+      return const instructions.I64GeSInstruction();
+    case instructions.Opcode.I64GeU:
+      return const instructions.I64GeUInstruction();
+    case instructions.Opcode.I64Popcnt:
+      return const instructions.I64PopcntInstruction();
+    case instructions.Opcode.I64RemS:
+      return const instructions.I64RemSInstruction();
+    case instructions.Opcode.I64RemU:
+      return const instructions.I64RemUInstruction();
+    case instructions.Opcode.I64And:
+      return const instructions.I64AndInstruction();
+    case instructions.Opcode.I64Or:
+      return const instructions.I64OrInstruction();
+    case instructions.Opcode.I64Xor:
+      return const instructions.I64XorInstruction();
+    case instructions.Opcode.I64ShL:
+      return const instructions.I64ShLInstruction();
+    case instructions.Opcode.I64ShrS:
+      return const instructions.I64ShrSInstruction();
+    case instructions.Opcode.I64ShrU:
+      return const instructions.I64ShrUInstruction();
+    case instructions.Opcode.I64RtoL:
+      return const instructions.I64RotlInstruction();
+    case instructions.Opcode.I64RtoR:
+      return const instructions.I64RotrInstruction();
+    case instructions.Opcode.I64Extend8S:
+      return const instructions.I64Extend8SInstruction();
+    case instructions.Opcode.I64Extend16S:
+      return const instructions.I64Extend16SInstruction();
+    case instructions.Opcode.I64Const:
+      return instructions.I64ConstInstruction(reader.readI32());
+    case instructions.Opcode.F32Const:
+      return instructions.F32ConstInstruction(reader.readF32());
+    case instructions.Opcode.F32Eq:
+      return const instructions.F32EqInstruction();
+    case instructions.Opcode.F32Ne:
+      return const instructions.F32NeInstruction();
+    case instructions.Opcode.F32Lt:
+      return const instructions.F32LtInstruction();
+    case instructions.Opcode.F32Gt:
+      return const instructions.F32GtInstruction();
+    case instructions.Opcode.F32Le:
+      return const instructions.F32LeInstruction();
+    case instructions.Opcode.F32Abs:
+      return const instructions.F32AbsInstruction();
+    case instructions.Opcode.F32Ge:
+      return const instructions.F32GeInstruction();
+    case instructions.Opcode.F32Neg:
+      return const instructions.F32NegInstruction();
+    case instructions.Opcode.F32Ceil:
+      return const instructions.F32CeilInstruction();
+    case instructions.Opcode.F32Floor:
+      return const instructions.F32FloorInstruction();
+    case instructions.Opcode.F32Trunc:
+      return const instructions.F32TruncInstruction();
+    case instructions.Opcode.F32Nearest:
+      return const instructions.F32NearestInstruction();
+    case instructions.Opcode.F32Sqrt:
+      return const instructions.F32SqrtInstruction();
+    case instructions.Opcode.F32Add:
+      return const instructions.F32AddInstruction();
+    case instructions.Opcode.F32Sub:
+      return const instructions.F32SubInstruction();
+    case instructions.Opcode.F32Mul:
+      return const instructions.F32MulInstruction();
+    case instructions.Opcode.F32Div:
+      return const instructions.F32DivInstruction();
+    case instructions.Opcode.F32Min:
+      return const instructions.F32MinInstruction();
+    case instructions.Opcode.F32Max:
+      return const instructions.F32MaxInstruction();
+    case instructions.Opcode.F32Copysign:
+      return const instructions.F32CopysignInstruction();
+    case instructions.Opcode.I32WrapI64:
+      return const instructions.I32WrapI64Instruction();
+    case instructions.Opcode.F64Sqrt:
+      return const instructions.F64SqrtInstruction();
+    case instructions.Opcode.F64Eq:
+      return const instructions.F64EqInstruction();
+    case instructions.Opcode.F64Ne:
+      return const instructions.F64NeInstruction();
+    case instructions.Opcode.F64Lt:
+      return const instructions.F64LtInstruction();
+    case instructions.Opcode.F64Gt:
+      return const instructions.F64GtInstruction();
+    case instructions.Opcode.F64Le:
+      return const instructions.F64LeInstruction();
+    case instructions.Opcode.F64Abs:
+      return const instructions.F64AbsInstruction();
+    case instructions.Opcode.F64Ge:
+      return const instructions.F64GeInstruction();
+    case instructions.Opcode.F64Neg:
+      return const instructions.F64NegInstruction();
+    case instructions.Opcode.F64Ceil:
+      return const instructions.F64CeilInstruction();
+    case instructions.Opcode.F64Floor:
+      return const instructions.F64FloorInstruction();
+    case instructions.Opcode.F64Trunc:
+      return const instructions.F64TruncInstruction();
+    case instructions.Opcode.F64Nearest:
+      return const instructions.F64NearestInstruction();
+    case instructions.Opcode.F64Sqrt:
+      return const instructions.F64SqrtInstruction();
+    case instructions.Opcode.F64Add:
+      return const instructions.F64AddInstruction();
+    case instructions.Opcode.F64Sub:
+      return const instructions.F64SubInstruction();
+    case instructions.Opcode.F64Mul:
+      return const instructions.F64MulInstruction();
+    case instructions.Opcode.F64Div:
+      return const instructions.F64DivInstruction();
+    case instructions.Opcode.F64Min:
+      return const instructions.F64MinInstruction();
+    case instructions.Opcode.F64Max:
+      return const instructions.F64MaxInstruction();
+    case instructions.Opcode.F64Copysign:
+      return const instructions.F64CopysignInstruction();
+    case instructions.Opcode.F64Const:
+      return instructions.F64ConstInstruction(reader.readF64());
+    case instructions.Opcode.Drop:
+      return const instructions.DropInstruction();
+    case instructions.Opcode.I32Load:
+      return instructions.I32LoadInstruction(ReadMemoryArg(reader));
+    case instructions.Opcode.I64Load:
+      return instructions.I64LoadInstruction(ReadMemoryArg(reader));
+    case instructions.Opcode.F32Load:
+      return instructions.F32LoadInstruction(ReadMemoryArg(reader));
+    case instructions.Opcode.F64Load:
+      return instructions.F64LoadInstruction(ReadMemoryArg(reader));
+    case instructions.Opcode.I32Load8S:
+      return instructions.I32Load8SInstruction(ReadMemoryArg(reader));
+    case instructions.Opcode.I32Load8U:
+      return instructions.I32Load8UInstruction(ReadMemoryArg(reader));
+    case instructions.Opcode.I32Load16S:
+      return instructions.I32Load16SInstruction(ReadMemoryArg(reader));
+    case instructions.Opcode.I32Load16U:
+      return instructions.I32Load16UInstruction(ReadMemoryArg(reader));
+    case instructions.Opcode.I64Load8S:
+      return instructions.I64Load8SInstruction(ReadMemoryArg(reader));
+    case instructions.Opcode.I64Load8U:
+      return instructions.I64Load8UInstruction(ReadMemoryArg(reader));
+    case instructions.Opcode.I64Load16S:
+      return instructions.I64Load16SInstruction(ReadMemoryArg(reader));
+    case instructions.Opcode.I64Load16U:
+      return instructions.I64Load16UInstruction(ReadMemoryArg(reader));
+    case instructions.Opcode.I64Load32S:
+      return instructions.I64Load32SInstruction(ReadMemoryArg(reader));
+    case instructions.Opcode.I64Load32U:
+      return instructions.I64Load32UInstruction(ReadMemoryArg(reader));
+    case instructions.Opcode.I32Store:
+      return instructions.I32StoreInstruction(ReadMemoryArg(reader));
+    case instructions.Opcode.I64Store:
+      return instructions.I64StoreInstruction(ReadMemoryArg(reader));
+    case instructions.Opcode.F32Store:
+      return instructions.F32StoreInstruction(ReadMemoryArg(reader));
+    case instructions.Opcode.F64Store:
+      return instructions.F64StoreInstruction(ReadMemoryArg(reader));
+    case instructions.Opcode.I32Store8:
+      return instructions.I32Store8Instruction(ReadMemoryArg(reader));
+    case instructions.Opcode.I32Store16:
+      return instructions.I32Store16Instruction(ReadMemoryArg(reader));
+    case instructions.Opcode.I64Store8:
+      return instructions.I64Store8Instruction(ReadMemoryArg(reader));
+    case instructions.Opcode.I64Store16:
+      return instructions.I64Store16Instruction(ReadMemoryArg(reader));
+    case instructions.Opcode.I64Store32:
+      return instructions.I64Store32Instruction(ReadMemoryArg(reader));
+    case instructions.Opcode.MemoryGrow:
+      return instructions.MemoryGrowInstruction(reader.readU32());
+    case instructions.Opcode.MemorySize:
+      final _ = reader.readByte();
+      return const instructions.MemorySizeInstruction();
+    // TODO: improve instruction decoding because opecode maybe tow bytes in the version 2
+    // this instruction is defined in the version2 of the spec
+    case instructions.Opcode.MmeoryCopyOrFill:
+      switch (reader.readByte()) {
+        case 0x0A:
+          return instructions.MemoryCopyInstruction(
+              reader.readU32(), reader.readU32());
+        case 0x0B:
+          return instructions.MemoryFillInstruction(reader.readU32());
+      }
+    case instructions.Opcode.Select:
+      return const instructions.SelectInstruction();
+    case instructions.Opcode.I32TruncF32S:
+      return const instructions.I32TruncF32SInstruction();
+    case instructions.Opcode.I32TruncF32U:
+      return const instructions.I32TruncF32UInstruction();
+    case instructions.Opcode.I32TruncF64S:
+      return const instructions.I32TruncF64SInstruction();
+    case instructions.Opcode.I32TruncF64U:
+      return const instructions.I32TruncF64UInstruction();
+    case instructions.Opcode.I64ExtendI32S:
+      return const instructions.I64ExtendI32SInstruction();
+    case instructions.Opcode.I64ExtendI32U:
+      return const instructions.I64ExtendI32UInstruction();
+    case instructions.Opcode.I64TruncF32S:
+      return const instructions.I64TruncF32SInstruction();
+    case instructions.Opcode.I64TruncF32U:
+      return const instructions.I64TruncF32UInstruction();
+    case instructions.Opcode.I64TruncF64S:
+      return const instructions.I64TruncF64SInstruction();
+    case instructions.Opcode.I64TruncF64U:
+      return const instructions.I64TruncF64UInstruction();
+    case instructions.Opcode.F32ConvertI32S:
+      return const instructions.F32ConvertI32SInstruction();
+    case instructions.Opcode.F32ConvertI32U:
+      return const instructions.F32ConvertI32UInstruction();
+    case instructions.Opcode.F32ConvertI64S:
+      return const instructions.F32ConvertI64SInstruction();
+    case instructions.Opcode.F32ConvertI64U:
+      return const instructions.F32ConvertI64UInstruction();
+    case instructions.Opcode.F32DemoteF64:
+      return const instructions.F32DemoteF64Instruction();
+    case instructions.Opcode.F64ConvertI32S:
+      return const instructions.F64ConvertI32SInstruction();
+    case instructions.Opcode.F64ConvertI32U:
+      return const instructions.F64ConvertI32UInstruction();
+    case instructions.Opcode.F64ConvertI64S:
+      return const instructions.F64ConvertI64SInstruction();
+    case instructions.Opcode.F64ConvertI64U:
+      return const instructions.F64ConvertI64UInstruction();
+    case instructions.Opcode.F64PromoteF32:
+      return const instructions.F64PromoteF32Instruction();
+    case instructions.Opcode.I32ReinterpretF32:
+      return const instructions.I32ReinterpretF32Instruction();
+    case instructions.Opcode.I64ReinterpretF64:
+      return const instructions.I64ReinterpretF64Instruction();
+    case instructions.Opcode.F32ReinterpretI32:
+      return const instructions.F32ReinterpretI32Instruction();
+    case instructions.Opcode.F64ReinterpretI64:
+      return const instructions.F64ReinterpretI64Instruction();
+
     default:
       throw Exception("Invalid Opcode: $opcode");
   }
+
+  throw Exception("Cannot Decode Exception");
+}
+
+Section Decode(SectionID id, Uint8List data) {
+  final reader = SectionReader(data);
+
+  switch (id) {
+    case SectionID.Custom:
+      return CustomSection.decodeCustomSection(reader);
+    case SectionID.Type:
+      return TypeSection.decodeTypeSection(reader);
+    case SectionID.Import:
+      return ImportSection.decodeImportSection(reader);
+    case SectionID.Function:
+      return FunctionSection.decodeFunctionSection(reader);
+    case SectionID.Table:
+      return TableSection.decodeTableSection(reader);
+    case SectionID.Memory:
+      return MemorySection.decodeMemorySection(reader);
+    case SectionID.Global:
+      return GlobalSection.decodeGlobalSection(reader);
+    case SectionID.Export:
+      return ExportSection.decodeExportSection(reader);
+    case SectionID.Code:
+      return CodeSection.decodeCodeSection(reader);
+    case SectionID.Element:
+      return ElementSection.decodeElementSection(reader);
+    case SectionID.Data:
+      return DataSection.decodeDataSection(reader);
+    case SectionID.Start:
+      return StartSection.decodeStartSection(reader);
+  }
+}
+
+MemoryArg ReadMemoryArg(SectionReader reader) {
+  final arg = MemoryArg(align: reader.readU32(), offset: reader.readU32());
+  return arg;
 }

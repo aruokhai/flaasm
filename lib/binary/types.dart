@@ -97,6 +97,17 @@ enum ElemType {
   const ElemType(this.value);
 }
 
+extension ElemTypeFrom on int {
+  static ElemType from(int elemType) {
+    switch (elemType) {
+      case 0x70:
+        return ElemType.FuncRef;
+      default:
+        throw ArgumentError('uknown elem type: ${elemType.toRadixString(16)}');
+    }
+  }
+}
+
 // Class for Table
 class Table {
   ElemType elemType;
